@@ -13,21 +13,22 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="css/styles.css" />
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
   <div id="app">
     <section id="screen-setup" class="screen active">
       <header class="masthead">
-        <div class="logo-mark" aria-hidden="true">C</div>
+        <div class="logo-mark" aria-hidden="true"><i data-lucide="crown"></i></div>
         <div>
           <h1>Contador Chinchón</h1>
-          <p>Offline · mesa · sin cuentas mentales</p>
+          <p>Offline · Mesa · Sin Cuentas Mentales</p>
         </div>
       </header>
 
       <div class="sheet">
         <h2>¿Quiénes juegan?</h2>
-        <p class="hint">Nombres o iniciales. Mínimo 2. El teclado del celu entra de una.</p>
+        <p class="hint">Nombres o iniciales. mínimo 2.</p>
         <div id="setupPlayers" class="player-setup"></div>
         <button type="button" id="addSetupPlayer" class="ghost-btn">+ Agregar jugador</button>
 
@@ -64,30 +65,33 @@
 
     <section id="screen-podium" class="screen">
       <header class="masthead">
-        <div class="logo-mark">👑</div>
+        <div class="logo-mark" aria-hidden="true"><i data-lucide="crown"></i></div>
         <div>
           <h1>Se cerró la mesa</h1>
-          <p>Podio listo para el grupo de WhatsApp</p>
+          <p>Podio listo para ver y compartir</p>
         </div>
       </header>
       <div class="podium-wrap">
         <div id="podioCard"></div>
       </div>
       <div class="actions" style="margin-top:12px">
-        <button type="button" id="sharePodium" class="primary">Compartir / guardar</button>
+        <button type="button" id="sharePodium" class="primary">Compartir / Guardar</button>
       </div>
       <button type="button" id="newGame" class="ghost-btn" style="margin-top:10px;color:#f4ead4;border-color:#d4a840">Nueva partida</button>
     </section>
   </div>
 
   <div id="dock" class="dock" hidden>
-    <button type="button" id="undoBtn" class="secondary fab-undo">↩ Deshacer</button>
+    <button type="button" id="undoBtn" class="secondary fab-undo">
+      <i data-lucide="undo-2"></i>
+      <span>Deshacer</span>
+    </button>
     <button type="button" id="nextRound" class="primary">Siguiente ronda</button>
   </div>
 
   <div id="toast" class="toast" role="alertdialog">
     <div class="toast-card">
-      <div id="toastEmoji" style="font-size:2.4rem">🐓</div>
+      <div id="toastEmoji" class="toast-icon"></div>
       <h3 id="toastTitle"></h3>
       <p id="toastText"></p>
       <button type="button" id="toastOk" class="primary">Dale, seguimos</button>

@@ -6,6 +6,7 @@
     limit: 200,
     players: [],
     rounds: [],
+    undoStack: [],
     startedAt: null,
     finishedAt: null,
     seenAlerts: {},
@@ -13,19 +14,36 @@
 
   let pendingInstall = null;
 
-  const funnyNear = [
-    (n, left) => `¡A ${n} le quedan ${left} puntos para el papelón!`,
-    (n, left) => `${n} está a ${left} de irse al sobre. Que no se descuiden.`,
-    (n, left) => `Cuidado mesa: ${n} huele el límite a ${left} puntos.`,
+  const warningNear = [
+    (n, left) => `${n} está a ${left} puntos del límite.`,
+    (n, left) => `${n} tiene ${left} puntos restantes antes del cierre.`,
+    (n, left) => `${n} necesita cuidar el margen: le quedan ${left}.`,
   ];
-  const funnyOut = [
-    (n) => `¡${n} se fue al papelón! Que deje el asiento y traiga el mate.`,
-    (n) => `${n} quedó más afuera que naipes bajo la mesa.`,
-    (n) => `Game over para ${n}. El chinchón no perdona.`,
+  const warningOut = [
+    (n) => `${n} llegó al límite y quedó eliminado.`,
+    (n) => `${n} supera el tope y sale de la mesa.`,
+    (n) => `${n} alcanza el máximo y queda fuera.`,
   ];
 
   const uid = () =>
     crypto.randomUUID ? crypto.randomUUID() : `p-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  function iconMarkup(name) {
+    const icons = {
+      crown: "crown",
+      spark: "sparkles",
+      alert: "triangle-alert",
+      exit: "door-open",
+      card: "credit-card",
+      camera: "camera",
+      install: "download",
+      medalGold: "medal",
+      medalSilver: "medal",
+      medalBronze: "medal"
+    };
+    const key = icons[name] || "sparkles";
+    return `<i data-lucide="${key}"></i>`;
+  }
 
   function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -120,6 +138,7 @@
       status: "active",
     }));
     state.rounds = [];
+    state.undoStack = [];
     state.startedAt = Date.now();
     state.finishedAt = null;
     state.seenAlerts = {};
@@ -131,7 +150,7 @@
   function renderGame() {
     $("roundLabel").textContent = `Ronda ${state.rounds.length + 1}`;
     $("limitPill").textContent = `Límite ${state.limit}`;
-    $("undoBtn").disabled = state.rounds.length === 0;
+    $("undoBtn").disabled = state.rounds.length === 0 && state.undoStack.length === 0;
     $("dock").hidden = false;
     renderBoard();
   }
@@ -180,11 +199,13 @@
       .map((p) => {
         const out = p.status !== "active" ? "col-out" : "";
         const elim = p.status === "active"
-          ? `<button type="button" class="elim-link" data-drop="${p.id}">eliminar</button>`
-          : `<span class="elim-link">${p.status === "eliminated" ? "eliminado" : "se bajó"}</span>`;
+          ? `<button type="button" class="elim-link" data-drop="${p.id}" aria-label="Retirarse ${escapeHtml(p.name)}">${iconMarkup("exit")}</button>`
+          : `<span class="elim-link is-state">${p.status === "eliminated" ? "eliminado" : "baja"}</span>`;
         return `<th class="${out}">
-          <span class="col-name">${escapeHtml(p.name)}</span>
-          ${elim}
+          <div class="col-head">
+            <span class="col-name">${escapeHtml(p.name)}</span>
+            ${elim}
+          </div>
         </th>`;
       })
       .join("");
@@ -223,10 +244,11 @@
           return `<td class="input-cell"><div class="frozen-note">—</div></td>`;
         }
         return `<td class="input-cell">
-          <input class="score-input" inputmode="numeric" pattern="-?[0-9]*" data-pid="${p.id}" placeholder="+" aria-label="Puntos de ${escapeHtml(p.name)}" />
+          <input class="score-input" inputmode="numeric" pattern="-?[0-9]*" data-pid="${p.id}" data-special="normal" placeholder="+" aria-label="Puntos de ${escapeHtml(p.name)}" />
           <div class="ink-actions">
-            <button type="button" data-fill="${p.id}" data-val="0">0</button>
-            <button type="button" data-fill="${p.id}" data-val="-10">-10</button>
+            <button type="button" data-fill="${p.id}" data-val="0" data-special="normal">0</button>
+            <button type="button" data-fill="${p.id}" data-val="-10" data-special="normal">-10</button>
+            <button type="button" class="wide" data-fill="${p.id}" data-val="-10" data-special="chinchon">Chinchón</button>
           </div>
         </td>`;
       })
@@ -234,8 +256,8 @@
 
     const warn = list
       .filter((p) => p.status === "active" && remaining(p) <= 25)
-      .map((p) => pickLine(funnyNear, p.name, Math.max(0, remaining(p))))
-      .concat(list.filter((p) => p.status === "eliminated").map((p) => pickLine(funnyOut, p.name)))[0] || "";
+      .map((p) => pickLine(warningNear, p.name, Math.max(0, remaining(p))))
+      .concat(list.filter((p) => p.status === "eliminated").map((p) => pickLine(warningOut, p.name)))[0] || "";
 
     board.innerHTML = `
       <div class="pad">
@@ -259,11 +281,20 @@
         <div class="pad-foot">${warn}</div>
       </div>
     `;
+    if (window.lucide) window.lucide.createIcons();
 
     board.querySelectorAll("[data-fill]").forEach((btn) => {
       btn.onclick = () => {
+        if (btn.dataset.special === "chinchon") {
+          finishGame();
+          return;
+        }
+
         const input = board.querySelector(`input[data-pid="${btn.dataset.fill}"]`);
-        if (input) input.value = btn.dataset.val;
+        if (input) {
+          input.value = btn.dataset.val;
+          input.dataset.special = btn.dataset.special || "normal";
+        }
       };
     });
     board.querySelectorAll("[data-drop]").forEach((btn) => {
@@ -307,6 +338,7 @@
   function nextRound() {
     const inputs = [...document.querySelectorAll(".score-input")];
     const scores = {};
+    const chinchonUsed = inputs.some((input) => input.dataset.special === "chinchon" && input.value.trim() !== "");
     for (const input of inputs) {
       const raw = input.value.trim().replace(",", ".");
       if (raw === "" || raw === "-") {
@@ -325,6 +357,7 @@
     if (!Object.keys(scores).length) return;
 
     const before = Object.fromEntries(state.players.map((p) => [p.id, p.status]));
+    state.undoStack.push({ type: "round", at: Date.now() });
     state.rounds.push({ id: uid(), scores, at: Date.now() });
     recompute();
     save();
@@ -333,7 +366,7 @@
     inputs.forEach((i) => (i.value = ""));
     if (newlyOut.length) {
       const p = newlyOut[0];
-      openToast("🐓", "Al sobre", pickLine(funnyOut, p.name));
+      openToast("spark", "Límite alcanzado", pickLine(warningOut, p.name));
     } else {
       const danger = activePlayers()
         .map((p) => ({ p, left: remaining(p) }))
@@ -342,10 +375,10 @@
       if (danger && !state.seenAlerts[danger.p.id + "-" + danger.left]) {
         state.seenAlerts[danger.p.id + "-" + danger.left] = true;
         save();
-        openToast("😬", "Olor a papelón", pickLine(funnyNear, danger.p.name, danger.left));
+        openToast("alert", "Puntos críticos", pickLine(warningNear, danger.p.name, danger.left));
       }
     }
-    if (activePlayers().length <= 1) {
+    if (activePlayers().length <= 1 && !chinchonUsed) {
       setTimeout(() => finishGame(), 650);
     }
   }
@@ -360,11 +393,36 @@
   }
 
   function undo() {
-    if (!state.rounds.length) return;
-    state.rounds.pop();
-    recompute();
-    save();
-    renderGame();
+    const lastAction = state.undoStack[state.undoStack.length - 1];
+    if (!lastAction) {
+      if (!state.rounds.length) return;
+      state.rounds.pop();
+      recompute();
+      save();
+      renderGame();
+      return;
+    }
+
+    state.undoStack.pop();
+
+    if (lastAction.type === "drop") {
+      const p = state.players.find((x) => x.id === lastAction.playerId);
+      if (p) {
+        p.status = lastAction.beforeStatus || "active";
+      }
+      save();
+      renderGame();
+      return;
+    }
+
+    if (lastAction.type === "round") {
+      if (state.rounds.length) {
+        state.rounds.pop();
+      }
+      recompute();
+      save();
+      renderGame();
+    }
   }
 
   function addMidPlayer(name) {
@@ -381,17 +439,18 @@
     });
     save();
     renderGame();
-    openToast("🃏", "Se suma a la mesa", `${clean} hereda ${inherited} puntos (el último de la tabla).`);
+    openToast("card", "Se suma a la mesa", `${clean} hereda ${inherited} puntos (el último de la tabla).`);
   }
 
   function dropPlayer(id) {
     const p = state.players.find((x) => x.id === id);
     if (!p || p.status !== "active") return;
+    state.undoStack.push({ type: "drop", playerId: p.id, beforeStatus: p.status, at: Date.now() });
     p.status = "inactive";
     save();
     renderGame();
     if (activePlayers().length <= 1) {
-      openToast("👋", "Queda una silla", `${p.name} se bajó. Podés cerrar la partida cuando quieran.`);
+      openToast("exit", "Jugador retirado", `${p.name} abandonó la mesa. Podés cerrar la partida cuando quieras.`);
     }
   }
 
@@ -414,7 +473,7 @@
 
   function renderPodium() {
     const list = ranking();
-    const medals = ["👑", "🥈", "🥉"];
+    const medals = [iconMarkup("medalGold"), iconMarkup("medalSilver"), iconMarkup("medalBronze")];
     const date = new Date(state.finishedAt || Date.now()).toLocaleString("es-AR", {
       day: "2-digit",
       month: "short",
@@ -424,7 +483,7 @@
     $("podioCard").innerHTML = `
       <div class="podium-brand">
         <small>Contador Chinchón Offline</small>
-        <h2>Podio de la juntada</h2>
+        <h2>Podio final</h2>
         <p>${date} · límite ${state.limit}</p>
       </div>
       ${list
@@ -432,8 +491,8 @@
           const playing = list.filter((x) => x.status !== "inactive");
           const last = p.status !== "inactive" && p.id === playing[playing.length - 1]?.id && playing.length > 1;
           const cls = i === 0 ? "place first" : last ? "place last" : "place";
-          const badge = p.status === "inactive" ? "👋" : last ? "🐔" : medals[i] || `${i + 1}°`;
-          const extra = p.status === "inactive" ? " · se bajó" : last ? " papelón" : "";
+          const badge = p.status === "inactive" ? iconMarkup("exit") : last ? iconMarkup("spark") : medals[i] || `${i + 1}°`;
+          const extra = p.status === "inactive" ? " · retiró" : last ? " · último activo" : "";
           return `<div class="${cls}">
             <div class="rank">${badge}</div>
             <div class="who">${escapeHtml(p.name)}${extra}</div>
@@ -442,11 +501,12 @@
         })
         .join("")}
     `;
+    if (window.lucide) window.lucide.createIcons();
   }
 
   async function sharePodium() {
     if (typeof html2canvas !== "function") {
-      openToast("📷", "Sin captura", "La librería de imagen no cargó. Probá de nuevo con conexión la primera vez.");
+      openToast("camera", "Sin captura", "La librería de imagen no cargó. Probá de nuevo con conexión la primera vez.");
       return;
     }
     const node = $("podioCard");
@@ -489,8 +549,9 @@
     showScreen("screen-setup");
   }
 
-  function openToast(emoji, title, text) {
-    $("toastEmoji").textContent = emoji;
+  function openToast(icon, title, text) {
+    $("toastEmoji").innerHTML = iconMarkup(icon);
+    if (window.lucide) window.lucide.createIcons();
     $("toastTitle").textContent = title;
     $("toastText").textContent = text;
     $("toast").classList.add("show");
@@ -570,8 +631,8 @@
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   if (ios && !standalone) {
     $("installBanner").classList.add("show");
-    $("installBtn").textContent = "En Safari: Compartir → Agregar a inicio";
-    $("installBtn").onclick = () => openToast("📱", "Instalar en iPhone", "Abrí el botón Compartir de Safari y elegí Agregar a pantalla de inicio.");
+    $("installBtn").textContent = "En Safari: Compartir y Agregar a inicio";
+    $("installBtn").onclick = () => openToast("install", "Instalar en iPhone", "Abrí el botón Compartir de Safari y elegí Agregar a pantalla de inicio.");
   }
 
   window.addEventListener("beforeinstallprompt", (e) => {
@@ -592,5 +653,6 @@
     navigator.serviceWorker.register("./sw.js");
   }
 
+  if (window.lucide) window.lucide.createIcons();
   resume();
 })();

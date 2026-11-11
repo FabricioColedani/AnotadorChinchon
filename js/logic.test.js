@@ -21,6 +21,20 @@ function lastPlace(state) {
   return Math.max(...pool.map((p) => p.total));
 }
 
+function undoState(state) {
+  const last = state.undoStack?.pop();
+  if (last && last.type === "drop") {
+    const p = state.players.find((x) => x.id === last.playerId);
+    if (p) p.status = last.beforeStatus || "active";
+    return p?.status || last.beforeStatus;
+  }
+  if (state.rounds.length) {
+    state.rounds.pop();
+    return "round";
+  }
+  return null;
+}
+
 const state = {
   limit: 200,
   players: [
@@ -61,5 +75,10 @@ state.rounds.pop();
 recompute(state);
 console.assert(state.players.find((p) => p.id === "a").total === 20, "undo round");
 console.assert(state.players.find((p) => p.id === "a").status === "active", "un-eliminate on undo");
+
+state.undoStack = [{ type: "drop", playerId: "b", beforeStatus: "active" }];
+state.players.find((p) => p.id === "b").status = "inactive";
+console.assert(undoState(state) === "active", "undo drop restores player");
+console.assert(state.players.find((p) => p.id === "b").status === "active", "player becomes active again");
 
 console.log("logic tests ok");
